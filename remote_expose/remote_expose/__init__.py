@@ -4,9 +4,10 @@ import socketserver
 import threading
 import time
 import logging
-from contextlib import contextmanager
+import asyncio
+from contextlib import contextmanager, asynccontextmanager
 from pyngrok import ngrok
-from typing import Optional
+from typing import Optional, Union
 import socket
 
 logging.basicConfig(level=logging.INFO)
@@ -153,7 +154,7 @@ class SimpleHTTPRequestHandlerNoListing(http.server.SimpleHTTPRequestHandler):
             logger.debug(f"{self.client_address[0]} - {format%args}")
 
 @contextmanager
-def exposeRemote(filepath: str):
+def exposeRemote(filepath: str) -> str:
     """
     Context manager that exposes a local file through a public ngrok URL.
     Multiple files can be exposed simultaneously using the same server.
@@ -166,33 +167,68 @@ def exposeRemote(filepath: str):
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File {filepath} not found")
-    
-    logger.info(f"Exposing file: {filepath}")
-    file_dir = os.path.dirname(os.path.abspath(filepath))
+
+    directory = os.path.dirname(os.path.abspath(filepath))
     filename = os.path.basename(filepath)
     
-    manager = ServerManager()
+    server_manager = ServerManager()
     
     try:
-        def handler(*args, **kwargs):
-            return SimpleHTTPRequestHandlerNoListing(*args, directory=file_dir, **kwargs)
+        handler = lambda *args, **kwargs: SimpleHTTPRequestHandlerNoListing(*args, directory=directory, **kwargs)
+        server_manager.start_server(handler)
+        server_manager.start_ngrok()
+        server_manager._ref_count += 1
         
-        manager.increment_ref()
-        # Override the handler creation in start_server
-        original_handler = manager._server.RequestHandlerClass if manager._server else None
-        manager._server = None  # Force recreation of server with new handler
-        manager.start_server(handler_class=handler)
-        manager.start_ngrok()
+        yield f"{server_manager._public_url}/{filename}"
+    finally:
+        with server_manager._server_lock:
+            server_manager._ref_count -= 1
+            if server_manager._ref_count == 0:
+                server_manager._running.clear()
+                if server_manager._server:
+                    server_manager._server.shutdown()
+                    server_manager._server = None
+                if server_manager._server_thread:
+                    server_manager._server_thread.join()
+                    server_manager._server_thread = None
+                server_manager.cleanup()
+
+@asynccontextmanager
+async def exposeRemoteAsync(filepath: str) -> str:
+    """
+    Async context manager that exposes a local file through a public ngrok URL.
+    Multiple files can be exposed simultaneously using the same server.
+    
+    Args:
+        filepath (str): Path to the local file to expose
+    
+    Yields:
+        str: Public ngrok URL where the file can be accessed
+    """
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File {filepath} not found")
+
+    directory = os.path.dirname(os.path.abspath(filepath))
+    filename = os.path.basename(filepath)
+    
+    server_manager = ServerManager()
+    
+    try:
+        handler = lambda *args, **kwargs: SimpleHTTPRequestHandlerNoListing(*args, directory=directory, **kwargs)
+        server_manager.start_server(handler)
+        server_manager.start_ngrok()
+        server_manager._ref_count += 1
         
-        file_url = manager.get_file_url(filename)
-        logger.info(f"File available at: {file_url}")
-        
-        try:
-            yield file_url
-        finally:
-            manager.decrement_ref()
-            if original_handler and manager._server:
-                manager._server.RequestHandlerClass = original_handler
-    except Exception as e:
-        logger.error(f"Error exposing file: {e}")
-        raise
+        yield f"{server_manager._public_url}/{filename}"
+    finally:
+        with server_manager._server_lock:
+            server_manager._ref_count -= 1
+            if server_manager._ref_count == 0:
+                server_manager._running.clear()
+                if server_manager._server:
+                    server_manager._server.shutdown()
+                    server_manager._server = None
+                if server_manager._server_thread:
+                    await asyncio.get_event_loop().run_in_executor(None, server_manager._server_thread.join)
+                    server_manager._server_thread = None
+                server_manager.cleanup()
