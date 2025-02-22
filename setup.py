@@ -7,7 +7,7 @@ setup(
     name="remote-expose",
     version="0.0.1",
     author="Pablo Schaffner",
-    author_email="",  # Add your email here
+    author_email="pablo@puntorigen.com",
     description="A Python package to expose local files through a public URL using ngrok",
     long_description=long_description,
     long_description_content_type="text/markdown",
