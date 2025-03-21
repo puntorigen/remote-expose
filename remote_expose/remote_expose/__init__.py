@@ -43,7 +43,7 @@ class ServerManager:
             return
             
         self._initialized = True
-        self.PORT = 8000
+        self.PORT = 8765
         self._server = None
         self._server_thread = None
         self._ngrok_tunnel = None
@@ -96,6 +96,8 @@ class ServerManager:
         if self._ngrok_tunnel:
             try:
                 ngrok.disconnect(self._public_url)
+                # For good measure, try to terminate all ngrok processes
+                ngrok.kill()
             except Exception as e:
                 logger.debug(f"Error during ngrok disconnect: {e}")
             finally:

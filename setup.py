@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="remote-expose",
-    version="0.0.1",
+    version="0.0.2",
     author="Pablo Schaffner",
     author_email="pablo@puntorigen.com",
     description="A Python package to expose local files through a public URL using ngrok",
