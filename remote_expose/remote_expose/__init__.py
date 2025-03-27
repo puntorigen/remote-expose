@@ -10,8 +10,13 @@ from pyngrok import ngrok
 from typing import Optional, Union
 import socket
 
-logging.basicConfig(level=logging.INFO)
+# Set up package-specific logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# Add NullHandler to avoid propagating logs to the root logger
+# This prevents the package from interfering with logging in other packages
+if not logger.handlers:
+    logger.addHandler(logging.NullHandler())
 
 class NonBlockingTCPServer(socketserver.TCPServer):
     def __init__(self, *args, **kwargs):
